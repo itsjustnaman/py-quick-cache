@@ -44,9 +44,6 @@ if __name__ == "__main__":
     status = my_cache.get("country")
     print(status)
 
-
     # Save to disk
-    status = my_cache.save_to_disk(filepath="cache_data/cache",use_timestamp=False)
+    status = my_cache.save_to_disk(filepath="cache_data/cache", use_timestamp=False)
     print(status)
-
-

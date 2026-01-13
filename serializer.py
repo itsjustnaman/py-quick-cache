@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 import pickle
 
+
 class BaseSerializer(ABC):
 
     @property
@@ -30,6 +31,7 @@ class PickleSerializer(BaseSerializer):
     @property
     def extension(self) -> str:
         return "pkl"
+
     @property
     def is_binary(self) -> bool:
         return True
