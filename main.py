@@ -47,3 +47,5 @@ if __name__ == "__main__":
     # Save to disk
     status = my_cache.save_to_disk(filepath="cache_data/cache", use_timestamp=False)
     print(status)
+
+    print(my_cache.get_metrics_snapshot())

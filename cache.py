@@ -1,23 +1,3 @@
-"""Objectives:
-[-] Store key-value pairs in a dictionary
-[-] Implement TTL (Time To Live) functionality for cache entries
-[-] Remove expired entries automatically
-[-] Provide methods to get, set, and delete cache entries
-[-] Implement a method to print the current state of the cache
-[-] Convert the code into a class-based structure for better organization
-[-] Implement a method to get the current size of the cache
-[-] Implement a method to cleanup the expired entries in the cache
-[-] Background cleanup to handle expired items automatically.
-[-] Implement LRU (Least Recently Used) eviction for cache size management.
-[-] Implement pluggable eviction policies (Strategy Pattern).
-[-] Ensure thread safety for concurrent access.
-[-] Enhance expiry strategies to allow more flexibility.
-[-] Make the cache entry and cache response more clear, e.g., using a dataclass or namedtuple.
-[-] Make the cache persistent to survive application restarts.
-[-] Implement pluggable serialization formats (e.g., JSON, Pickle).
-[] Take care of zombie threads on application exit.
-"""
-
 import time
 from typing import Any, Optional
 from datetime import datetime, timedelta
@@ -28,6 +8,7 @@ from dataclasses import dataclass
 from eviction_policy import EvictionPolicy, LRUEvictionPolicy
 from serializer import BaseSerializer, PickleSerializer
 from storage import FileManager
+from metrics import CacheMetrics
 
 
 @dataclass(slots=True)
@@ -78,6 +59,7 @@ class InMemoryCache:
 
         self.eviction_policy = eviction_policy or LRUEvictionPolicy()  # Default
         self.serializer = serializer or PickleSerializer()  # Default
+        self.metrics = CacheMetrics()
         self.cache_file_manager = FileManager(
             default_dir=self.DEFAULT_CACHE_DIR,
             default_filename=self.DEFAULT_CACHE_FILENAME,
@@ -95,21 +77,60 @@ class InMemoryCache:
         )
         self.cleanup_thread.start()
 
-    def _is_expired(self, key: str) -> bool:
-        return key in self.cache and self.cache[key].is_expired()
+    def _check_key_validity_and_remove_expired(self, key: str) -> bool:
+        """
+        Checks if a key is valid. If it's expired, it removes it.
+        Returns True if the key is valid and still in cache.
+        Returns False if the key was missing or pruned.
+        """
+        entry = self.cache.get(key)
 
-    def cleanup(self) -> tuple[bool, int, str]:
+        if entry is None:
+            return False
+
+        if entry.is_expired():
+            self.cache.pop(key)
+
+            # SYNC THE METRICS
+            # After a deletion, we need to update the 'expired_removals' count and the total keys
+            # We will also update the valid keys metric since we dont know if the background cleanup had caught onto or not
+            # If we don't decrement it there, your current_valid_keys will stay artificially high until the next full cleanup() runs
+            self.metrics.record_expired_removal()
+            self.metrics.update_total_keys(len(self.cache))
+            new_valid_count = max(0, self.metrics.get_current_valid_keys() - 1)
+            self.metrics.update_valid_keys(new_valid_count)
+
+            return False
+
+        return True
+
+    def cleanup(self) -> dict:
+        """
+        1. Removes all expired items.
+        2. Syncs physical and logical metrics.
+        3. Returns a summary of what was done.
+        """
         with self._lock:
-            expired_keys = set()
+            initial_physical = self.size()
 
-            for key in self.cache:
-                if self.cache[key].is_expired():
-                    expired_keys.add(key)
+            # Perform the sweep
+            for key in list(self.cache.keys()):
+                # This helper handles the deletion and the 'expired_removal' count
+                self._check_key_validity_and_remove_expired(key)
 
-            for key in expired_keys:
-                self.cache.pop(key)
+            final_count = self.size()
+            removed_count = initial_physical - final_count
 
-            return (True, len(expired_keys), "Cleanup completed")
+            # SYNC THE METRICS
+            # After a full sweep, physical length and valid size are identical.
+            self.metrics.update_total_keys(final_count)  # Total Length
+            self.metrics.update_valid_keys(final_count)  # Valid Size
+
+            return {
+                "success": True,
+                "items_removed": removed_count,
+                "current_size": final_count,
+            }
 
     def _ensure_capacity(self) -> tuple[bool, str]:
         self.cleanup()
@@ -117,6 +138,12 @@ class InMemoryCache:
         while self.size() >= self.max_cache_size:
             evicted_key = self.eviction_policy.select_eviction_key(self.cache)
             self.cache.pop(evicted_key)
+
+            # SYNC THE METRICS
+            # We will record the eviction and update the total keys and valid keys both since all the keys are valid at this point
+            self.metrics.record_eviction()
+            self.metrics.update_total_keys(self.size())
+            self.metrics.update_valid_keys(self.size())
 
         return (True, "Cache capacity enforced. Items evicted to make room.")
 
@@ -135,8 +162,14 @@ class InMemoryCache:
                     return CacheResponse(False, self.ERROR_TTL_INVALID)
 
             if key in self.cache:
-                # Key expiry check
-                if not self.cache[key].is_expired():
+
+                if self._check_key_validity_and_remove_expired(key) is True:
+                    # If the key is VALID, we cannot add a duplicate.
+
+                    # SYNC THE METRICS
+                    # Record a failed set operation.
+                    self.metrics.record_failed_op()
+
                     return CacheResponse(False, self.ERROR_KEY_EXISTS)
 
             if self.size() >= self.max_cache_size:
@@ -148,6 +181,12 @@ class InMemoryCache:
                 expiration_time=datetime.now() + timedelta(seconds=ttl),
                 ttl=ttl_sec,
             )
+
+            # SYNC THE METRICS
+            # Record a successful set operation and update the total keys as well as valid keys since we know one more valid key is added
+            self.metrics.record_set()
+            self.metrics.update_total_keys(self.size())
+            self.metrics.update_valid_keys(self.metrics.get_current_valid_keys() + 1)
 
             # --- PLUGGABLE HOOK FOR EVICTION POLICY ---
             self.eviction_policy.on_update(self.cache, key)
@@ -165,6 +204,11 @@ class InMemoryCache:
                 return CacheResponse(False, self.ERROR_TTL_INVALID)
 
             if key not in self.cache:
+                self.metrics.record_failed_op()
+                return CacheResponse(False, self.ERROR_KEY_NOT_EXIST)
+
+            if self._check_key_validity_and_remove_expired(key) is False:
+                self.metrics.record_failed_op()
                 return CacheResponse(False, self.ERROR_KEY_NOT_EXIST)
 
             self.cache[key] = CacheEntry(
@@ -176,20 +220,31 @@ class InMemoryCache:
             # --- PLUGGABLE HOOK FOR EVICTION POLICY ---
             self.eviction_policy.on_update(self.cache, key)
 
+            # SYNC THE METRICS
+            # Record a successful set and update the total and valid keys
+            self.metrics.record_set()
+            self.metrics.update_total_keys(self.size())
+            self.metrics.update_valid_keys(self.metrics.get_current_valid_keys())
+
             return CacheResponse(True, "Key updated")
 
     def get(self, key: str) -> CacheResponse:
+        self.metrics.record_get()
+
         with self._lock:
+
             if key not in self.cache:
+                self.metrics.record_miss()
                 return CacheResponse(False, self.ERROR_KEY_NOT_EXIST)
 
-            if self.cache[key].is_expired():
-                self.cache.pop(key)
+            if self._check_key_validity_and_remove_expired(key) is False:
+                self.metrics.record_miss()
                 return CacheResponse(False, self.ERROR_KEY_NOT_EXIST)
 
             # --- PLUGGABLE HOOK FOR EVICTION POLICY ---
             self.eviction_policy.on_access(self.cache, key)
 
+            self.metrics.record_hit()
             return CacheResponse(True, self.cache[key].value)
 
     def delete(self, key: str) -> CacheResponse:
@@ -197,26 +252,36 @@ class InMemoryCache:
             if key not in self.cache:
                 return CacheResponse(False, self.ERROR_KEY_NOT_EXIST)
 
-            if self.cache[key].is_expired():
-                self.cache.pop(key)
+            if self._check_key_validity_and_remove_expired(key) is False:
                 return CacheResponse(False, self.ERROR_KEY_NOT_EXIST)
 
             self.cache.pop(key)
+
+            # SYNC THE METRICS
+            # Record manual deletion, and update the total and valid keys accordingly
+            self.metrics.record_manual_deletion()
+            self.metrics.update_total_keys(self.size())
+            self.metrics.update_valid_keys(self.metrics.get_current_valid_keys() - 1)
+
             return CacheResponse(True, "Key deleted")
 
     def print(self):
         with self._lock:
+
+            self.cleanup()
+
             print(f"\n\tIn Memory Cache\n")
             for key in list(self.cache.keys()):
-                if self.cache[key].is_expired():
-                    self.cache.pop(key)
-                    continue
-
                 print(f"\t\t{key} : {self.cache[key].value} : {self.cache[key].ttl}\n")
             print(f"\tEND\n")
 
     def size(self) -> int:
         with self._lock:
+            return len(self.cache)
+
+    def valid_size(self) -> int:
+        with self._lock:
+            self.cleanup()
             return len(self.cache)
 
     def save_to_disk(
@@ -266,3 +331,7 @@ class InMemoryCache:
         while True:
             time.sleep(self.CLEANUP_INTERVAL_SEC)
             self.cleanup()
+
+    def get_metrics_snapshot(self):
+        with self._lock:
+            return self.metrics.snapshot()
