@@ -25,9 +25,9 @@ Objectives:
 [-] Make asdict function for cache entry
 [-] Review _internal_set() 
 [-] Take care of zombie threads on application exit.
-[] Add Logging
+[-] Add Logging
 
 [] Write test cases 
-[] Add Custom exceptions
 [] How will the users extend the config file and change only the things they need to change and use the other defaults
+[] Add Custom exceptions
 

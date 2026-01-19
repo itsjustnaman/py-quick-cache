@@ -1,4 +1,3 @@
-import time
 from typing import Any, Optional
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -6,12 +5,12 @@ import threading
 from dataclasses import dataclass
 import atexit
 
-import registry.default_registries as default_registries
-from config import CacheConfig
-from registry.registry import create_eviction_policy, create_serializer
-from backend import FileManager
-from metrics import CacheMetrics, NoOpMetrics
-
+from .base import BaseCache
+from .registry.registry import create_eviction_policy, create_serializer
+from .registry import default_registries
+from .config import QuickCacheConfig
+from .backend import FileManager
+from .metrics import CacheMetrics, NoOpMetrics
 
 import logging
 
@@ -56,7 +55,7 @@ class CacheResponse:
     data: Optional[Any] = None
 
 
-class InMemoryCache:
+class QuickCache(BaseCache):
     """
     In-Memory Cache.
     """
@@ -80,11 +79,11 @@ class InMemoryCache:
 
     def __init__(
         self,
-        config: Optional[CacheConfig] = None,
+        config: Optional[QuickCacheConfig] = None,
     ) -> None:
 
         # Load default config if no config is provided
-        self.config = config or CacheConfig()
+        self.config = config or QuickCacheConfig()
 
         self.eviction_policy = create_eviction_policy(self.config.eviction_policy)
         self.serializer = create_serializer(self.config.serializer)
@@ -123,7 +122,7 @@ class InMemoryCache:
         )
 
     def __repr__(self) -> str:
-        return f"<InMemoryCache(size={self.size()}, max_size={self.max_cache_size}, policy='{self.config.eviction_policy}')>"
+        return f"<Cache(size={self.size()}, max_size={self.max_cache_size}, policy='{self.config.eviction_policy}')>"
 
     def _is_ttl_valid(self, ttl: int) -> bool:
         if not ttl:

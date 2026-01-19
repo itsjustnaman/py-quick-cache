@@ -1,6 +1,6 @@
 from typing import Type, Dict
-from eviction_policy import EvictionPolicy
-from serializer import BaseSerializer
+from ..eviction_policy import EvictionPolicy
+from ..serializer import BaseSerializer
 
 _EVICTION_POLICY_REGISTRY: Dict[str, Type[EvictionPolicy]] = {}
 _SERIALIZER_REGISTRY: Dict[str, Type[BaseSerializer]] = {}

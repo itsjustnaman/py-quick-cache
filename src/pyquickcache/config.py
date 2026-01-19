@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class CacheConfig:
+class QuickCacheConfig:
     max_size: int = 3
     default_ttl: int = 5
     cleanup_interval: int = 2
