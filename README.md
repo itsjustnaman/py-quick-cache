@@ -23,12 +23,12 @@ pip install pyquickcache
 ```python
 from pyquickcache import QuickCache, QuickCacheConfig
 
-cache = Cache(CacheConfig(max_size=100))
+cache = QuickCache(QuickCacheConfig(max_size=100))
 
 cache.set("user:1", {"name": "Alice"}, ttl=60)
 
 result = cache.get("user:1")
-print(result.data)
+print(result)
 ```
 
 ## Configuration
