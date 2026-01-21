@@ -73,14 +73,6 @@ cache.load_from_disk()
 
 All operations are protected by re-entrant locks and safe for concurrent access.
 
-## Roadmap
-
-- Redis backend
-- Async support
-- Prometheus exporter
-- CLI
-- HTTP cache service
-
 ## License
 
 MIT License

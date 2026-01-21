@@ -1,12 +1,12 @@
 from typing import Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import OrderedDict
 import threading
 from enum import Enum, auto
 from dataclasses import dataclass
 import atexit
 
-from .base import BaseCache
+from .base_cache import BaseCache
 from .registry.registry import create_eviction_policy, create_serializer
 from .registry import default_registries
 from .config import QuickCacheConfig
@@ -21,6 +21,7 @@ from .exceptions import (
     CacheSaveError,
     CacheMetricsSaveError,
 )
+from .helpers import utcnow
 
 import logging
 
@@ -55,7 +56,7 @@ class CacheEntry:
 
     def is_expired(self) -> bool:
         """Returns true if expired"""
-        return datetime.now() > self.expiration_time
+        return utcnow() > self.expiration_time
 
 
 class KeyStatus(Enum):
@@ -178,7 +179,7 @@ class QuickCache(BaseCache):
             # Add a new cache entry as no valid key exists
             self.cache[key] = CacheEntry(
                 value=value,
-                expiration_time=datetime.now() + timedelta(seconds=ttl),
+                expiration_time=utcnow() + timedelta(seconds=ttl),
                 ttl=ttl,
             )
 
@@ -191,7 +192,7 @@ class QuickCache(BaseCache):
             self.metrics.update_valid_keys_by_delta(delta=1)
 
             # --- PLUGGABLE HOOK FOR EVICTION POLICY ---
-            self.eviction_policy.on_update(self.cache, key)
+            self.eviction_policy.on_add(self.cache, key)
 
     def update(self, key: str, value: Any, ttl_sec: int) -> None:
         """Updates the value of an existing valid key. Raises if key doesn't exist or is expired."""
@@ -218,7 +219,7 @@ class QuickCache(BaseCache):
             # Perform the update, as a valid key is present
             self.cache[key] = CacheEntry(
                 value=value,
-                expiration_time=datetime.now() + timedelta(seconds=ttl),
+                expiration_time=utcnow() + timedelta(seconds=ttl),
                 ttl=ttl,
             )
 
@@ -231,7 +232,7 @@ class QuickCache(BaseCache):
             # Record a successful set and update the total and valid keys
             self.metrics.record_set()
             self.metrics.update_total_keys(self.size())
-            self.metrics.update_valid_keys_by_delta(delta=0)
+            # self.metrics.update_valid_keys_by_delta(delta=0)
 
     def delete(self, key: str) -> None:
         """Deletes a key from the cache. Raises if key doesn't exist or is expired"""
@@ -250,6 +251,9 @@ class QuickCache(BaseCache):
             # Delete the valid key
             self.cache.pop(key)
 
+            # Eviction Policy Hook
+            self.eviction_policy.on_delete(self.cache, key)
+
             logger.debug(f"Key '{key}' manually deleted.")
 
             # SYNC THE METRICS
@@ -260,8 +264,8 @@ class QuickCache(BaseCache):
 
     def set_many(self, data: dict[str, Any], ttl_sec: int = None) -> None:
         """
-        Bulk upsert multiple keys. Raises InvalidTTL if TTL is invalid.
-        Returns None on success.
+        Bulk upsert multiple keys.
+        Each key is treated as an individual set operation for metrics.
         """
 
         if ttl_sec is None:
@@ -318,6 +322,10 @@ class QuickCache(BaseCache):
                 if status is KeyStatus.VALID:
                     self.cache.pop(key=key)
                     logger.debug(f"Key '{key}' deleted in bulk operation.")
+
+                    # Eviction Policy Hook
+                    self.eviction_policy.on_delete(self.cache, key)
+
                     # Record metrics
                     self.metrics.record_manual_deletion()
                     self.metrics.update_valid_keys_by_delta(-1)
@@ -362,11 +370,7 @@ class QuickCache(BaseCache):
             logger.info(f"Cache cleared. Removed {cleared_count} items.")
 
     def cleanup(self) -> None:
-        """
-        - Removes all expired items.
-        - Syncs physical and logical metrics.
-        - Returns a summary of what was done.
-        """
+        """Removes expired items and synchronizes metrics"""
         removed_count = 0
 
         with self._lock:
@@ -553,6 +557,9 @@ class QuickCache(BaseCache):
         if entry.is_expired():
             self.cache.pop(key)
 
+            # Eviction Policy Hook
+            self.eviction_policy.on_delete(self.cache, key)
+
             # SYNC THE METRICS
             # After a deletion, we need to update the 'expired_removals' count and the total keys
             # We will also update the valid keys metric since we dont know if the background cleanup had caught onto or not
@@ -591,11 +598,14 @@ class QuickCache(BaseCache):
         if (is_new or is_ghost) and self.size() >= self.max_cache_size:
             self._ensure_capacity()
 
-        expiration = datetime.now() + timedelta(seconds=ttl)
+        expiration = utcnow() + timedelta(seconds=ttl)
         self.cache[key] = CacheEntry(value=value, expiration_time=expiration, ttl=ttl)
 
         # HOOK FOR EVICTION POLICY
-        self.eviction_policy.on_update(self.cache, key)
+        if is_new or is_ghost:
+            self.eviction_policy.on_add(self.cache, key)
+        else:
+            self.eviction_policy.on_update(self.cache, key)
 
         # RECORD METRICS
         self.metrics.record_set()
@@ -622,9 +632,9 @@ class QuickCache(BaseCache):
         - Repeatedly evicts entries using the configured eviction policy until
         the cache size is within capacity
         - Records eviction events and synchronizes cache metrics
-        -Eviction is guaranteed to complete unless the eviction policy fails,
+        - Eviction is guaranteed to complete unless the eviction policy fails,
         in which case an exception is propagated.
-        -This method mutates the cache and metrics in place and is intended
+        - This method mutates the cache and metrics in place and is intended
         for internal use only.
         """
 
@@ -639,6 +649,9 @@ class QuickCache(BaseCache):
         while self.size() >= self.max_cache_size:
             evicted_key = self.eviction_policy.select_eviction_key(self.cache)
             self.cache.pop(evicted_key)
+            # Eviction Policy Hook
+            self.eviction_policy.on_delete(self.cache, evicted_key)
+            # Record Metrics
             self.metrics.record_eviction()
             eviction_happened = True
 

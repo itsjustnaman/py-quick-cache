@@ -31,16 +31,18 @@ Objectives:
 [-] How will the users extend the config file and change only the things they need to change and use the other defaults (They can just inherit the QuickConfig and make changes)
 [-] Add Custom exceptions
 [-] Refactor cache.py to raise exceptions instead of returning CacheResponse objects
-[] Write test cases 
+[-] key value checks in main add, set, update, get : not required handled by python 
+[-] Handle timezones as well
+[-] New eviction policy : FIFO
+[] New eviction policy : LFU
+[] Write test cases
+[] Add fuzz tests for TTL + eviction
 [] Refine readme
 [] Documentation
-[] New eviction policies : LFU and FIFO
 [] Upload on PyPI
+[] Write code for Benchmarking cleanup & eviction & publish numbers
 
-[] Where to load metric ??
-[] key calue checks in main add, set, update, get
-[] Handle timezones as well
-[] Things mentioned in the chat, fix those
+
 
 - get
 - set
@@ -57,6 +59,6 @@ Objectives:
 - stop
 - save_to_disk
 - load_from_disk
-- get_metrics_snapshot
+- get_metrics_snapshot 
 - reset_metrics
 - save_metrics_to_disk

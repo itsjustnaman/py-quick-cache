@@ -2,26 +2,24 @@ from collections import OrderedDict
 from .base_eviction_policy import EvictionPolicy
 
 
-class LRUEvictionPolicy(EvictionPolicy):
+class FIFOEvictionPolicy(EvictionPolicy):
     """
-    Least Recently Used (LRU) Eviction Policy.
-    Evicts the least recently accessed item when the cache is full.
+    First In First Out (FIFO) Eviction Policy.
+    Evicts the oldest inserted item when the cache is full.
     """
 
     def on_add(self, cache, key) -> None:
-        # Move the updated key to the end to mark it as recently used
+        # Move newly added key to the end to preserve insertion order
         if key in cache:
             cache.move_to_end(key)
 
     def on_update(self, cache: OrderedDict, key: str) -> None:
-        # Move the updated key to the end to mark it as recently used
-        if key in cache:
-            cache.move_to_end(key)
+        # Do Nothing
+        pass
 
     def on_access(self, cache: OrderedDict, key: str) -> None:
-        # Move the accessed key to the end to mark it as recently used
-        if key in cache:
-            cache.move_to_end(key)
+        # Do Nothing
+        pass
 
     def on_delete(self, cache, key) -> None:
         # Do Nothing

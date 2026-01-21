@@ -1,7 +1,7 @@
 from typing import Any
 import json
 
-from .base import BaseSerializer
+from .base_serializer import BaseSerializer
 
 
 class JsonSerializer(BaseSerializer):

@@ -1,7 +1,7 @@
 from typing import Any
 import pickle
 
-from .base import BaseSerializer
+from .base_serializer import BaseSerializer
 
 
 class PickleSerializer(BaseSerializer):
