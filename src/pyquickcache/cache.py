@@ -8,7 +8,7 @@ import atexit
 
 from .base_cache import BaseCache
 from .registry.registry import create_eviction_policy, create_serializer
-from .registry import default_registries
+# from .registry import default_registries
 from .config import QuickCacheConfig
 from .backend import FileManager
 from .metrics import CacheMetrics, NoOpMetrics
@@ -45,12 +45,16 @@ class CacheEntry:
 
     @classmethod
     def from_dict(cls, data: dict) -> "CacheEntry":
+        expiration = datetime.fromisoformat(data["expiration_time"])
+
+        # Ensure timezone awareness as fromisoformat may return naive datetime
+        if expiration.tzinfo is None:
+            expiration = expiration.replace(tzinfo=timezone.utc)
+
         """Reconstructs a CacheEntry from a dictionary."""
         return cls(
             value=data["value"],
-            expiration_time=datetime.fromisoformat(
-                data["expiration_time"]
-            ),  # Revert string to datetime
+            expiration_time=expiration,  # Revert string to datetime
             ttl=data["ttl"],
         )
 

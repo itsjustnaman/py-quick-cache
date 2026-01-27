@@ -1,10 +1,10 @@
 from collections import OrderedDict
 from .base_eviction_policy import BaseEvictionPolicy
 
-# from ..registry.decorators import register_eviction_policy
+from ..registry.decorators import register_eviction_policy
 
 
-# @register_eviction_policy("lru")
+@register_eviction_policy("lru")
 class LRUEvictionPolicy(BaseEvictionPolicy):
     """
     Least Recently Used (LRU) Eviction Policy.

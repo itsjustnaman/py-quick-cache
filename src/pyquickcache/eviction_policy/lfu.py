@@ -1,10 +1,10 @@
 from collections import OrderedDict
 from .base_eviction_policy import BaseEvictionPolicy
 
-# from ..registry.decorators import register_eviction_policy
+from ..registry.decorators import register_eviction_policy
 
 
-# @register_eviction_policy("lfu")
+@register_eviction_policy("lfu")
 class LFUEvictionPolicy(BaseEvictionPolicy):
     """
     - Least Frequently Used (LFU) Eviction Policy.
