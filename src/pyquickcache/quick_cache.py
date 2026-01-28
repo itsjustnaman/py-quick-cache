@@ -8,8 +8,7 @@ import atexit
 
 from .base_cache import BaseCache
 from .registry.registry import create_eviction_policy, create_serializer
-# from .registry import default_registries
-from .config import QuickCacheConfig
+from .quick_cache_config import QuickCacheConfig
 from .backend import FileManager
 from .metrics import CacheMetrics, NoOpMetrics
 from .exceptions import (
@@ -31,12 +30,42 @@ logger.addHandler(logging.NullHandler())
 
 @dataclass(slots=True)
 class CacheEntry:
+    """
+    INTERNAL.
+
+    Represents a single cache entry with an absolute expiration time.
+
+    Purpose:
+        Encapsulates the cached value along with TTL metadata and a computed
+        expiration timestamp.
+
+    Invariants:
+        - expiration_time is always timezone-aware (UTC)
+        - ttl is the original TTL (in seconds) used to compute expiration_time
+
+    Notes:
+        This class is not part of the public API and may change without notice.
+    """
+
     value: Any
     expiration_time: datetime
     ttl: int
 
     def to_dict(self) -> dict:
-        """Converts the entry into a JSON-serializable dictionary."""
+        """
+        INTERNAL.
+
+        Serialize this cache entry into a dictionary representation.
+
+        Purpose:
+            Used by serializers and persistence layers to convert cache entries
+            into a JSON-compatible format.
+
+        Behavior:
+            - Converts expiration_time to ISO 8601 string
+            - Does not perform deep serialization of the value
+        """
+
         return {
             "value": self.value,
             "expiration_time": self.expiration_time.isoformat(),  # Handle datetime conversion here
@@ -45,13 +74,26 @@ class CacheEntry:
 
     @classmethod
     def from_dict(cls, data: dict) -> "CacheEntry":
+        """
+        INTERNAL.
+
+        Serialize this cache entry into a dictionary representation.
+
+        Purpose:
+            Used by serializers and persistence layers to convert cache entries
+            into a JSON-compatible format.
+
+        Behavior:
+            - Converts expiration_time to ISO 8601 string
+            - Does not perform deep serialization of the value
+        """
+
         expiration = datetime.fromisoformat(data["expiration_time"])
 
         # Ensure timezone awareness as fromisoformat may return naive datetime
         if expiration.tzinfo is None:
             expiration = expiration.replace(tzinfo=timezone.utc)
 
-        """Reconstructs a CacheEntry from a dictionary."""
         return cls(
             value=data["value"],
             expiration_time=expiration,  # Revert string to datetime
@@ -59,11 +101,43 @@ class CacheEntry:
         )
 
     def is_expired(self) -> bool:
-        """Returns true if expired"""
+        """
+        INTERNAL.
+
+        Check whether this cache entry has expired.
+
+        Behavior:
+            - Compares the current UTC time against expiration_time
+            - Does not mutate cache state
+
+        Returns:
+            bool: True if the entry is expired, False otherwise.
+        """
+
         return utcnow() > self.expiration_time
 
 
 class KeyStatus(Enum):
+    """
+    INTERNAL.
+
+    Represents the evaluated state of a cache key during lookup.
+
+    Used by:
+        - Internal inspection helpers
+        - Public API methods to decide control flow without raising
+
+    Values:
+        MISSING:
+            Key does not exist in the cache.
+
+        EXPIRED:
+            Key exists but has exceeded its TTL and was removed.
+
+        VALID:
+            Key exists and is not expired.
+    """
+
     MISSING = auto()
     EXPIRED = auto()
     VALID = auto()
@@ -71,13 +145,36 @@ class KeyStatus(Enum):
 
 class QuickCache(BaseCache):
     """
-    In-Memory Cache.
+    Thread-safe in-memory cache with TTL support, eviction policies, persistence,
+    and optional metrics collection.
+
+    QuickCache is designed for backend services and Python applications where
+    fast, in-memory data access is required. It supports:
+
+    - Time-based expiration (TTL)
+    - Pluggable eviction policies (e.g., LRU, custom policies)
+    - Disk persistence via configurable serializers
+    - Background cleanup of expired entries
+    - Optional metrics collection and persistence
+
+    The cache exposes a Pythonic exception-based API consistent with standard
+    library behavior.
     """
 
     def __init__(
         self,
         config: Optional[QuickCacheConfig] = None,
     ) -> None:
+        """
+        Initialize a new QuickCache instance.
+
+        Args:
+            config (Optional[QuickCacheConfig]): Cache configuration object.
+                If not provided, default configuration values are used.
+
+        Raises:
+            ValueError: If the configured eviction policy or serializer is unknown.
+        """
 
         # Load default config if no config is provided
         self.config = config or QuickCacheConfig()
@@ -122,7 +219,19 @@ class QuickCache(BaseCache):
         return f"<QuickCache(size={self.size()}, max_size={self.max_cache_size}, policy='{self.config.eviction_policy}')>"
 
     def get(self, key: str) -> Any:
-        """Returns the value of a valid key in cache else raise exceptions"""
+        """
+        Retrieve the value associated with a key from the cache.
+
+        Args:
+            key (str): The cache key to retrieve.
+
+        Returns:
+            Any: The cached value.
+
+        Raises:
+            KeyNotFound: If the key does not exist.
+            KeyExpired: If the key exists but has expired.
+        """
 
         self.metrics.record_get()
 
@@ -144,7 +253,20 @@ class QuickCache(BaseCache):
             return self.cache[key].value
 
     def set(self, key: str, value: Any, ttl_sec: int = None) -> None:
-        """Upsert a key, if no ttl provides, uses the default value"""
+        """
+        Insert or update a key in the cache.
+
+        If the key already exists, its value and expiration time are updated.
+        If no TTL is provided, the default TTL from configuration is used.
+
+        Args:
+            key (str): The cache key.
+            value (Any): The value to store.
+            ttl_sec (Optional[int]): Time-to-live in seconds.
+
+        Raises:
+            InvalidTTL: If the provided TTL is invalid.
+        """
 
         if ttl_sec is None:
             ttl = self.config.default_ttl
@@ -159,7 +281,19 @@ class QuickCache(BaseCache):
             logger.debug(f"Key '{key}' set.")
 
     def add(self, key: str, value: Any, ttl_sec: int = None) -> None:
-        """Insert the key only if no valid key exists"""
+        """
+        Insert a key into the cache only if it does not already exist
+        or if the previous entry has expired.
+
+        Args:
+            key (str): The cache key.
+            value (Any): The value to store.
+            ttl_sec (Optional[int]): Time-to-live in seconds.
+
+        Raises:
+            KeyAlreadyExists: If a valid key already exists.
+            InvalidTTL: If the provided TTL is invalid.
+        """
 
         with self._lock:
 
@@ -199,7 +333,19 @@ class QuickCache(BaseCache):
             self.eviction_policy.on_add(self.cache, key)
 
     def update(self, key: str, value: Any, ttl_sec: int = None) -> None:
-        """Updates the value of an existing valid key. Raises if key doesn't exist or is expired."""
+        """
+        Update the value of an existing valid key.
+
+        Args:
+            key (str): The cache key.
+            value (Any): The new value.
+            ttl_sec (Optional[int]): Time-to-live in seconds.
+
+        Raises:
+            KeyNotFound: If the key does not exist.
+            KeyExpired: If the key exists but has expired.
+            InvalidTTL: If the provided TTL is invalid.
+        """
 
         with self._lock:
 
@@ -239,7 +385,16 @@ class QuickCache(BaseCache):
             # self.metrics.update_valid_keys_by_delta(delta=0)
 
     def delete(self, key: str) -> None:
-        """Deletes a key from the cache. Raises if key doesn't exist or is expired"""
+        """
+        Remove a key from the cache.
+
+        Args:
+            key (str): The cache key to delete.
+
+        Raises:
+            KeyNotFound: If the key does not exist.
+            KeyExpired: If the key exists but has expired.
+        """
 
         with self._lock:
             status = self._inspect_key(key=key)
@@ -268,8 +423,17 @@ class QuickCache(BaseCache):
 
     def set_many(self, data: dict[str, Any], ttl_sec: int = None) -> None:
         """
-        Bulk upsert multiple keys.
-        Each key is treated as an individual set operation for metrics.
+        Insert or update multiple keys in a single operation.
+
+        Each key is treated as an independent set operation for metrics
+        and eviction handling.
+
+        Args:
+            data (dict[str, Any]): Mapping of keys to values.
+            ttl_sec (Optional[int]): Time-to-live in seconds.
+
+        Raises:
+            InvalidTTL: If the provided TTL is invalid.
         """
 
         if ttl_sec is None:
@@ -287,8 +451,14 @@ class QuickCache(BaseCache):
     def get_many(self, keys: list[str]) -> dict[str, Any]:
         """
         Retrieve multiple keys from the cache.
-        Expired or missing keys are skipped.
-        Returns a dictionary of only valid keys to their values.
+
+        Missing or expired keys are skipped. Only valid keys are returned.
+
+        Args:
+            keys (list[str]): List of cache keys.
+
+        Returns:
+            dict[str, Any]: Mapping of valid keys to their values.
         """
         results = {}
 
@@ -312,9 +482,13 @@ class QuickCache(BaseCache):
 
     def delete_many(self, keys: list[str]) -> None:
         """
-        Deletes multiple keys from the cache in a best-effort way.
-        Missing or expired keys are skipped. Returns None.
-        Logs a warning if any keys were missing or expired.
+        Delete multiple keys from the cache in a best-effort manner.
+
+        Missing or expired keys are skipped. This method does not raise
+        for individual key failures.
+
+        Args:
+            keys (list[str]): List of cache keys to delete.
         """
 
         with self._lock:
@@ -347,20 +521,38 @@ class QuickCache(BaseCache):
                 )
 
     def size(self) -> int:
-        """Returns the total size of the cache that includes the expired keys as well"""
+        """
+        Return the total number of entries in the cache,
+        including expired entries.
+
+        Returns:
+            int: Total cache size.
+        """
 
         with self._lock:
             return len(self.cache)
 
     def valid_size(self) -> int:
-        """Returns the total valid keys in the cache, also does a cleanup before calculating"""
+        """
+        Return the number of valid (non-expired) entries in the cache.
+
+        Performs a cleanup pass before calculating the size.
+
+        Returns:
+            int: Number of valid cache entries.
+        """
 
         with self._lock:
             self.cleanup()
             return len(self.cache)
 
     def clear(self) -> None:
-        """Wipes all data from the cache, do not reset metrics and returns None on success"""
+        """
+        Remove all entries from the cache.
+
+        Metrics are updated to reflect the cleared state, but
+        the metrics system itself is not reset.
+        """
 
         with self._lock:
             cleared_count = len(self.cache)
@@ -374,7 +566,11 @@ class QuickCache(BaseCache):
             logger.info(f"Cache cleared. Removed {cleared_count} items.")
 
     def cleanup(self) -> None:
-        """Removes expired items and synchronizes metrics"""
+        """
+        Remove all expired entries from the cache and
+        synchronize cache metrics.
+        """
+
         removed_count = 0
 
         with self._lock:
@@ -396,7 +592,13 @@ class QuickCache(BaseCache):
             # logger.debug(f"Cleanup finished. Removed {removed_count} expired items.")
 
     def stop(self) -> None:
-        """Gracefully stops the background cleanup thread."""
+        """
+        Gracefully stop the background cleanup thread.
+
+        This method is automatically registered via `atexit`
+        and is safe to call multiple times.
+        """
+
         if not self._stop_event.is_set():
             logger.info("Stopping InMemoryCache...")
             self._stop_event.set()
@@ -413,8 +615,14 @@ class QuickCache(BaseCache):
 
     def save_to_disk(self, filepath: str = None, use_timestamp: bool = False) -> None:
         """
-        Saves cache data to disk.
-        Raises CacheSaveError on failure.
+        Persist the cache contents to disk.
+
+        Args:
+            filepath (Optional[str]): Custom file path.
+            use_timestamp (bool): Whether to append a timestamp to the filename.
+
+        Raises:
+            CacheSaveError: If saving to disk fails.
         """
 
         timestamp = (
@@ -443,10 +651,22 @@ class QuickCache(BaseCache):
 
     def load_from_disk(self, filepath: str = None) -> None:
         """
-        Loads cache data from disk.
-        Raises an exception if loading fails.
-        Returns None on success.
+        Load cache contents from disk.
+
+        Existing cache contents are replaced.
+
+        Args:
+            filepath (Optional[str]): Path to the cache file.
+
+        Raises:
+            CacheLoadError: If loading fails or data is corrupted.
         """
+
+        # Clear metrics and cache before loading new data
+
+        with self._lock:
+            self.cache.clear()
+            self.metrics.reset()
 
         try:
 
@@ -484,18 +704,23 @@ class QuickCache(BaseCache):
 
     def get_metrics_snapshot(self) -> dict:
         """
-        Returns a snapshot of the current cache metrics.
-        The returned dictionary is a read-only snapshot representing the
-        cache state at the time of the call.
+        Return a snapshot of the current cache metrics.
+
+        The returned dictionary represents a read-only view
+        of metrics at the time of the call.
+
+        Returns:
+            dict: Metrics snapshot.
         """
+
         with self._lock:
             return self.metrics.snapshot()
 
     def reset_metrics(self) -> None:
         """
-        Resets all cache metrics to their initial state.
-        This clears counters such as hits, misses, evictions, and key counts.
-        Does not affect cache contents.
+        Reset all cache metrics to their initial state.
+
+        Cache contents are not affected.
         """
 
         with self._lock:
@@ -505,8 +730,14 @@ class QuickCache(BaseCache):
         self, filepath: str = None, use_timestamp: bool = False
     ) -> None:
         """
-        Saves the current cache metrics snapshot to disk.
-        Raises on failure.
+        Persist the current metrics snapshot to disk.
+
+        Args:
+            filepath (Optional[str]): Custom file path.
+            use_timestamp (bool): Whether to append a timestamp to the filename.
+
+        Raises:
+            CacheMetricsSaveError: If saving metrics fails.
         """
 
         timestamp = (
@@ -532,7 +763,23 @@ class QuickCache(BaseCache):
             raise CacheMetricsSaveError(filepath or "unknown", e) from e
 
     def _is_ttl_valid(self, ttl: int) -> bool:
-        """Returns True if ttl is present, and is an integer"""
+        """
+        INTERNAL.
+
+        Validate a TTL value.
+
+        Purpose:
+            Ensures that a TTL is a positive integer before it is used
+            to compute expiration timestamps.
+
+        Behavior:
+            - Returns False for None, zero, negative, or non-integer values
+            - Does not raise; validation errors are handled by the caller
+
+        Returns:
+            bool: True if TTL is valid, False otherwise.
+        """
+
         if not ttl:
             return False
 
@@ -548,11 +795,29 @@ class QuickCache(BaseCache):
 
     def _inspect_key(self, key: str) -> KeyStatus:
         """
-        Inspects key state.
-        Handles expiration removal + metrics.
-        Does NOT raise.
-        it mutates metrics and must never be called twice for same expired key
+        INTERNAL.
+
+        Inspect the current state of a cache key without raising exceptions.
+
+        Purpose:
+            Centralized helper used by public APIs to determine whether a key
+            is missing, expired, or valid.
+
+        Behavior:
+            - Removes expired entries from the cache
+            - Triggers eviction-policy delete hooks for expired keys
+            - Updates metrics for expired removals and key counts
+            - Never raises exceptions
+
+        Important:
+            - This method MUTATES cache state and metrics
+            - Must NOT be called multiple times for the same key in a single flow
+            (expired keys are removed on first inspection)
+
+        Returns:
+            KeyStatus: MISSING, EXPIRED, or VALID
         """
+
         entry = self.cache.get(key)
 
         if entry is None:
@@ -579,18 +844,29 @@ class QuickCache(BaseCache):
 
     def _internal_set(self, key: str, value: Any, ttl: int) -> None:
         """
-        Insert or update a cache entry without performing validation or public API checks.
+        INTERNAL.
 
-        This method handles the core logic for setting a key in the cache:
-        - Determines whether the key is new, expired (ghost), or already valid
-        - Enforces cache capacity constraints when inserting new or expired keys
-        - Computes and assigns the expiration time based on the provided TTL
-        - Updates the eviction policy
-        - Records and synchronizes cache metrics
+        Core insertion/update logic shared by multiple public APIs.
 
-        This method is intended for internal use only and assumes that all
-        required validation (such as key/value checks) has already been performed
-        by the caller.
+        Purpose:
+            Implements the low-level mechanics of setting a cache entry without
+            performing public API validation or raising user-facing exceptions.
+
+        Behavior:
+            - Determines whether the key is new, expired (ghost), or valid
+            - Enforces cache capacity constraints
+            - Computes expiration timestamps
+            - Invokes eviction policy hooks
+            - Synchronizes all relevant metrics
+
+        Important:
+            - Assumes TTL has already been validated
+            - Mutates cache, eviction policy state, and metrics
+            - Should only be called from methods holding the cache lock
+
+        Notes:
+            This method exists to avoid duplicating complex logic across
+            set(), add(), update(), and set_many().
         """
 
         status = self._inspect_key(key)
@@ -629,17 +905,26 @@ class QuickCache(BaseCache):
 
     def _ensure_capacity(self) -> None:
         """
-        Ensure the cache size does not exceed the configured maximum capacity.
-        This method is invoked when inserting a new entry would cause the cache
-        to exceed `max_cache_size`. It performs the following steps:
-        - Triggers a cleanup pass to remove expired entries
-        - Repeatedly evicts entries using the configured eviction policy until
-        the cache size is within capacity
-        - Records eviction events and synchronizes cache metrics
-        - Eviction is guaranteed to complete unless the eviction policy fails,
-        in which case an exception is propagated.
-        - This method mutates the cache and metrics in place and is intended
-        for internal use only.
+        INTERNAL.
+
+        Ensure the cache does not exceed the configured maximum capacity.
+
+        Purpose:
+            Called before inserting new entries when the cache is at or above
+            its size limit.
+
+        Behavior:
+            - Performs a cleanup pass to remove expired entries
+            - Repeatedly evicts entries using the configured eviction policy
+            - Records eviction events and synchronizes metrics
+
+        Important:
+            - Eviction continues until the cache size is strictly below capacity
+            - Assumes eviction policy always returns a valid key
+            - Mutates cache and metrics in place
+
+        Raises:
+            Exception: Propagates any unexpected errors from eviction policy logic.
         """
 
         logger.warning(
@@ -665,10 +950,26 @@ class QuickCache(BaseCache):
             self.metrics.update_valid_keys(new_size)
 
     def _background_cleanup(self) -> None:
-        """Background task that runs periodically to remove expired items."""
-        # Loop as long as the stop signal hasn't been set
+        """
+        INTERNAL.
+
+        Debug-only helper for inspecting cache contents.
+
+        Purpose:
+            Prints the current in-memory cache state in a human-readable format.
+
+        Behavior:
+            - Forces a cleanup pass before printing
+            - Acquires the cache lock
+            - Writes directly to stdout
+
+        Important:
+            - Not part of the public API
+            - Should not be used in production code
+        """
 
         logger.info("Background cleanup thread started.")
+        # Loop as long as the stop signal hasn't been set
         try:
             while not self._stop_event.is_set():
                 # Wait for the interval, but wake up instantly if stop_event is set
@@ -686,6 +987,24 @@ class QuickCache(BaseCache):
             logger.info("Background cleanup thread has shut down.")
 
     def _debug_print(self) -> None:
+        """
+        INTERNAL.
+
+        Debug-only helper for inspecting cache contents.
+
+        Purpose:
+            Prints the current in-memory cache state in a human-readable format.
+
+        Behavior:
+            - Forces a cleanup pass before printing
+            - Acquires the cache lock
+            - Writes directly to stdout
+
+        Important:
+            - Not part of the public API
+            - Should not be used in production code
+        """
+
         with self._lock:
 
             self.cleanup()

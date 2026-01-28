@@ -25,22 +25,6 @@ pyquickcache.base\_cache module
    :show-inheritance:
    :undoc-members:
 
-pyquickcache.cache module
--------------------------
-
-.. automodule:: pyquickcache.cache
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-pyquickcache.config module
---------------------------
-
-.. automodule:: pyquickcache.config
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 pyquickcache.decorators module
 ------------------------------
 
@@ -61,6 +45,22 @@ pyquickcache.helpers module
 ---------------------------
 
 .. automodule:: pyquickcache.helpers
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+pyquickcache.quick\_cache module
+--------------------------------
+
+.. automodule:: pyquickcache.quick_cache
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+pyquickcache.quick\_cache\_config module
+----------------------------------------
+
+.. automodule:: pyquickcache.quick_cache_config
    :members:
    :show-inheritance:
    :undoc-members:

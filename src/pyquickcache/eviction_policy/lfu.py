@@ -7,14 +7,33 @@ from ..registry.decorators import register_eviction_policy
 @register_eviction_policy("lfu")
 class LFUEvictionPolicy(BaseEvictionPolicy):
     """
-    - Least Frequently Used (LFU) Eviction Policy.
-    - Evicts the least frequently used item when the cache is full.
-    - A cache item is counted as used when it gets added, updated, set, get or accessed. On deleted the frequency is set removed
-    - In case of a tie (multiple items with the same frequency), least recently used item is deleted. (LFU + LRU)
+    Least Frequently Used (LFU) eviction policy with LRU tie-breaking.
+
+    This policy evicts the least frequently used item when the cache exceeds
+    its capacity. Frequency is incremented on add, update, set, or access.
+    In case of ties (multiple items with the same frequency), the least recently
+    used item is evicted (LFU + LRU behavior).
+
+    Registered as "lfu" in the eviction policy registry.
+
+    INTERNAL:
+        Subclasses BaseEvictionPolicy and manages internal frequency tables.
     """
 
     def __init__(self):
-        """--- Initialize LFU Data Structures ---"""
+        """
+        Initialize LFU eviction policy data structures.
+
+        Attributes:
+            freq (dict[str, int]): Maps keys to their access frequency.
+            freq_table (dict[int, OrderedDict[str, None]]): Maps frequency to an
+                OrderedDict of keys (preserving LRU order within the same frequency).
+            min_freq (int): Tracks the current minimum frequency in the cache.
+
+        INTERNAL:
+            Used to maintain LFU state.
+        """
+
         # keys -> frequency
         self.freq: dict[str, int] = {}
 
@@ -26,7 +45,16 @@ class LFUEvictionPolicy(BaseEvictionPolicy):
 
     def on_add(self, cache, key) -> None:
         """
-        Initialize frequency for new key
+        Called when a new key is inserted into the cache.
+
+        Initializes frequency tracking for the new key and updates min_freq.
+
+        Args:
+            cache (OrderedDict): The cache's internal storage.
+            key (str): The key being added.
+
+        INTERNAL:
+            Overrides BaseEvictionPolicy.on_add.
         """
         frequency = 1
 
@@ -44,15 +72,48 @@ class LFUEvictionPolicy(BaseEvictionPolicy):
         self.min_freq = frequency
 
     def on_update(self, cache: OrderedDict, key: str) -> None:
-        """Update frequency on update"""
+        """
+        Called when an existing key is updated.
+
+        Increments the key's frequency and adjusts internal structures.
+
+        Args:
+            cache (OrderedDict): The cache's internal storage.
+            key (str): The key being updated.
+
+        INTERNAL:
+            Overrides BaseEvictionPolicy.on_update.
+        """
         self._touch(key=key)
 
     def on_access(self, cache: OrderedDict, key: str) -> None:
-        """Update frequency on access"""
+        """
+        Called when a key is accessed.
+
+        Increments the key's frequency and adjusts internal structures.
+
+        Args:
+            cache (OrderedDict): The cache's internal storage.
+            key (str): The key being accessed.
+
+        INTERNAL:
+            Overrides BaseEvictionPolicy.on_access.
+        """
         self._touch(key=key)
 
     def on_delete(self, cache, key) -> None:
-        """Remove key from frequency tracking"""
+        """
+        Called when a key is explicitly removed from the cache.
+
+        Removes the key from frequency tracking and updates min_freq if needed.
+
+        Args:
+            cache (OrderedDict): The cache's internal storage.
+            key (str): The key being deleted.
+
+        INTERNAL:
+            Overrides BaseEvictionPolicy.on_delete.
+        """
         freq = self.freq.pop(key)
 
         bucket = self.freq_table[freq]
@@ -67,7 +128,21 @@ class LFUEvictionPolicy(BaseEvictionPolicy):
                 self.min_freq = min(self.freq_table.keys(), default=0)
 
     def select_eviction_key(self, cache: OrderedDict) -> str:
-        """Evict least frequently used key (ties broken by LRU)"""
+        """
+        Selects the key to evict when the cache exceeds capacity.
+
+        Args:
+            cache (OrderedDict): The cache's internal storage.
+
+        Returns:
+            str: The least frequently used key; ties are broken by LRU order.
+
+        Raises:
+            RuntimeError: If called when the cache is empty.
+
+        INTERNAL:
+            Overrides BaseEvictionPolicy.select_eviction_key.
+        """
         if not cache:
             raise RuntimeError("Eviction requested on empty cache")
 
@@ -76,7 +151,15 @@ class LFUEvictionPolicy(BaseEvictionPolicy):
         return next(iter(bucket))
 
     def _touch(self, key: str) -> None:
-        """Helper to update frequency of a key on access/update"""
+        """
+        Internal helper to update the frequency of a key on access or update.
+
+        Args:
+            key (str): The key whose frequency is being updated.
+
+        INTERNAL:
+            Used internally by on_access and on_update to maintain LFU state.
+        """
         old_freq = self.freq[key]
         new_freq = old_freq + 1
         self.freq[key] = new_freq

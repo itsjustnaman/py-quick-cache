@@ -8,11 +8,23 @@ if TYPE_CHECKING:
 def register_eviction_policy(name: str):
     """
     Class decorator to register a custom eviction policy.
+
+    Args:
+        name (str): The name under which the eviction policy will be registered.
+
+    Returns:
+        Callable[[Type[BaseEvictionPolicy]], Type[BaseEvictionPolicy]]:
+            A decorator that registers the given class as an eviction policy.
+
+    Raises:
+        TypeError: If the decorated class does not inherit from BaseEvictionPolicy.
+
+    INTERNAL:
+        Uses runtime import to avoid circular dependencies.
     """
 
-    # Runtime imports — safe, no circular import
     from ..eviction_policy.base_eviction_policy import BaseEvictionPolicy
-    from .registry import register_eviction_policy as _register
+    from .registry import _register_eviction_policy as _register
 
     def decorator(cls: Type["BaseEvictionPolicy"]) -> Type["BaseEvictionPolicy"]:
         if not issubclass(cls, BaseEvictionPolicy):
@@ -29,10 +41,23 @@ def register_eviction_policy(name: str):
 def register_serializer(name: str):
     """
     Class decorator to register a custom serializer.
+
+    Args:
+        name (str): The name under which the serializer will be registered.
+
+    Returns:
+        Callable[[Type[BaseSerializer]], Type[BaseSerializer]]:
+            A decorator that registers the given class as a serializer.
+
+    Raises:
+        TypeError: If the decorated class does not inherit from BaseSerializer.
+
+    INTERNAL:
+        Uses runtime import to avoid circular dependencies.
     """
 
     from ..serializer.base_serializer import BaseSerializer
-    from .registry import register_serializer as _register
+    from .registry import _register_serializer as _register
 
     def decorator(cls: Type["BaseSerializer"]) -> Type["BaseSerializer"]:
         if not issubclass(cls, BaseSerializer):

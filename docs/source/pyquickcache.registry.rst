@@ -12,14 +12,6 @@ pyquickcache.registry.decorators module
    :show-inheritance:
    :undoc-members:
 
-pyquickcache.registry.default\_registries module
-------------------------------------------------
-
-.. automodule:: pyquickcache.registry.default_registries
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 pyquickcache.registry.registry module
 -------------------------------------
 

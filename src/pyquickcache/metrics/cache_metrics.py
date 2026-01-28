@@ -4,43 +4,111 @@ from dataclasses import dataclass, asdict
 
 @dataclass
 class CacheMetricsData:
+    """
+    Container for all cache metrics counters and derived statistics.
+
+    This class stores raw counters (hits, misses, evictions, etc.)
+    and exposes calculated properties such as hit ratio and eviction rate.
+
+    It is intentionally kept as a pure data object with no side effects.
+    """
+
     hits: int = 0
+    """Number of successful cache hits."""
+
     misses: int = 0
+    """Number of cache misses."""
+
     sets: int = 0
+    """Number of successful set operations."""
+
     gets: int = 0
+    """Total number of get operations attempted."""
+
     failed_ops: int = 0
+    """Number of failed cache operations."""
+
     evictions: int = 0
+    """Number of entries evicted due to eviction policy."""
+
     expired_removals: int = 0
+    """Number of expired entries removed automatically."""
+
     manual_deletions: int = 0
+    """Number of entries manually deleted by the user."""
+
     current_valid_keys: int = 0
+    """Current number of non-expired keys in the cache."""
+
     peak_valid_keys: int = 0
+    """Highest observed number of valid keys."""
+
     current_total_keys: int = 0
+    """Current total number of keys (including expired)."""
+
     peak_total_keys: int = 0
+    """Highest observed total number of keys."""
 
     # --- Calculated Properties ---
 
     @property
     def hit_ratio(self) -> float:
+        """
+        Ratio of get operations to set operations.
+
+        Returns:
+            float: Get-to-set ratio.
+        """
         return (self.hits / self.gets) if self.gets > 0 else 0.0
 
     @property
     def miss_ratio(self) -> float:
+        """
+        Ratio of cache misses to total get operations.
+
+        Returns:
+            float: Miss ratio in the range [0.0, 1.0].
+        """
         return (self.misses / self.gets) if self.gets > 0 else 0.0
 
     @property
     def get_set_ratio(self) -> float:
+        """
+        Ratio of get operations to set operations.
+
+        Returns:
+            float: Get-to-set ratio.
+        """
         return (self.gets / self.sets) if self.sets > 0 else 0.0
 
     @property
     def eviction_rate(self) -> float:
+        """
+        Ratio of evictions to set operations.
+
+        Returns:
+            float: Eviction rate.
+        """
         return (self.evictions / self.sets) if self.sets > 0 else 0.0
 
     @property
     def expired_bloat(self) -> int:
+        """
+        Number of expired entries currently occupying cache storage.
+
+        Returns:
+            int: Expired but not yet cleaned keys.
+        """
         return self.current_total_keys - self.current_valid_keys
 
     @property
     def waste_percentage(self) -> float:
+        """
+        Percentage of cache occupied by expired entries.
+
+        Returns:
+            float: Waste percentage in the range [0.0, 100.0].
+        """
         return (
             (self.expired_bloat / self.current_total_keys * 100)
             if self.current_total_keys > 0
@@ -48,6 +116,14 @@ class CacheMetricsData:
         )
 
     def to_dict(self):
+        """
+        Convert metrics data to a fully serializable dictionary.
+
+        Includes both raw counters and derived metrics.
+
+        Returns:
+            dict: Dictionary representation of metrics.
+        """
         data = asdict(self)
 
         data.update(
@@ -65,6 +141,19 @@ class CacheMetricsData:
 
 
 class CacheMetrics(BaseMetrics):
+    """
+    Default in-memory metrics implementation for QuickCache.
+
+    This class records cache metrics using simple integer counters
+    and derives useful statistics such as hit ratio and eviction rate.
+
+    Characteristics:
+        - Lightweight and fast
+        - Thread-safe by design assumption (GIL-protected increments)
+        - Never raises exceptions
+        - Safe to disable by replacing with NoOpMetrics
+    """
+
     def __init__(self):
         self._data = CacheMetricsData()
 
@@ -172,7 +261,6 @@ class CacheMetrics(BaseMetrics):
         if self._data.current_total_keys > self._data.peak_total_keys:
             self._data.peak_total_keys = self._data.current_total_keys
 
-    # RENAME TO update_valid_size
     def update_valid_keys(self, size: int):
         self._data.current_valid_keys = size
         if size > self._data.peak_valid_keys:
@@ -186,7 +274,6 @@ class CacheMetrics(BaseMetrics):
             self._data.peak_valid_keys = self._data.current_valid_keys
 
     def snapshot(self):
-        """Return current metrics as a serializable dictionary."""
         snapshot = self._data.to_dict()
         return snapshot
 
