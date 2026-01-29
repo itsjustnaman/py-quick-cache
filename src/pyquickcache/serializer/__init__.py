@@ -1,4 +1,4 @@
-from .base_serializer import BaseSerializer
+from .base import BaseSerializer
 from .pickle import PickleSerializer
 from .json import JsonSerializer
 

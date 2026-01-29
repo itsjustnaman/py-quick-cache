@@ -1,7 +1,7 @@
 from typing import Any
 import json
 
-from .base_serializer import BaseSerializer
+from .base import BaseSerializer
 
 from ..registry.decorators import register_serializer
 

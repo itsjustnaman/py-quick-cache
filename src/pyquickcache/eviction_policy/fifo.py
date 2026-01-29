@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from .base_eviction_policy import BaseEvictionPolicy
+from .base import BaseEvictionPolicy
 
 from ..registry.decorators import register_eviction_policy
 

@@ -1,8 +1,8 @@
 from typing import Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..eviction_policy.base_eviction_policy import BaseEvictionPolicy
-    from ..serializer.base_serializer import BaseSerializer
+    from ..eviction_policy.base import BaseEvictionPolicy
+    from ..serializer.base import BaseSerializer
 
 
 def register_eviction_policy(name: str):
@@ -23,7 +23,7 @@ def register_eviction_policy(name: str):
         Uses runtime import to avoid circular dependencies.
     """
 
-    from ..eviction_policy.base_eviction_policy import BaseEvictionPolicy
+    from ..eviction_policy.base import BaseEvictionPolicy
     from .registry import _register_eviction_policy as _register
 
     def decorator(cls: Type["BaseEvictionPolicy"]) -> Type["BaseEvictionPolicy"]:
@@ -56,7 +56,7 @@ def register_serializer(name: str):
         Uses runtime import to avoid circular dependencies.
     """
 
-    from ..serializer.base_serializer import BaseSerializer
+    from ..serializer.base import BaseSerializer
     from .registry import _register_serializer as _register
 
     def decorator(cls: Type["BaseSerializer"]) -> Type["BaseSerializer"]:

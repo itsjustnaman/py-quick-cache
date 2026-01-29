@@ -1,7 +1,7 @@
 from typing import Any
 import pickle
 
-from .base_serializer import BaseSerializer
+from .base import BaseSerializer
 
 from ..registry.decorators import register_serializer
 

@@ -1,4 +1,4 @@
-from .base_metrics import BaseMetrics
+from .base import BaseMetrics
 
 
 class NoOpMetrics(BaseMetrics):

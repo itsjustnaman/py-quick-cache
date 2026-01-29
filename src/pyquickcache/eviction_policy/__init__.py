@@ -1,4 +1,4 @@
-from .base_eviction_policy import BaseEvictionPolicy
+from .base import BaseEvictionPolicy
 from .lru import LRUEvictionPolicy
 from .fifo import FIFOEvictionPolicy
 from .lfu import LFUEvictionPolicy

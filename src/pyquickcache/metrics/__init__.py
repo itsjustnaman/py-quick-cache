@@ -1,4 +1,4 @@
-from .base_metrics import BaseMetrics
+from .base import BaseMetrics
 from .cache_metrics import CacheMetricsData, CacheMetrics
 from .no_op import NoOpMetrics
 

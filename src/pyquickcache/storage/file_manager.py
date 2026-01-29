@@ -1,3 +1,5 @@
+# INTERNAL: filesystem utilities for storage backends
+
 import os
 import sys
 from datetime import datetime

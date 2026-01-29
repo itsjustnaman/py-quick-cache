@@ -1,4 +1,4 @@
-from .base_metrics import BaseMetrics
+from .base import BaseMetrics
 from dataclasses import dataclass, asdict
 
 

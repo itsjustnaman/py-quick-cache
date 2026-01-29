@@ -9,7 +9,7 @@ import atexit
 from .base_cache import BaseCache
 from .registry.registry import create_eviction_policy, create_serializer
 from .quick_cache_config import QuickCacheConfig
-from .backend import FileManager
+from .storage import FileManager, FileSystemStorage
 from .metrics import CacheMetrics, NoOpMetrics
 from .exceptions import (
     KeyExpired,
@@ -189,7 +189,7 @@ class QuickCache(BaseCache):
             default_dir=self.config.storage_dir,
             default_filename=self.config.filename,
         )
-
+        
         self.cache_metrics_file_manager = FileManager(
             default_dir=self.config.metrics_storage_dir,
             default_filename=self.config.metrics_filename,
