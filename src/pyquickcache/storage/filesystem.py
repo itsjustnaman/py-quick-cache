@@ -1,8 +1,12 @@
 from typing import Any
 from .base import StorageBackend
-from .file_manager import FileManager  # or move file.py here
+from ._file_manager import FileManager  # or move file.py here
 from ..exceptions import CacheSaveError, CacheLoadError
+from ..serializer import BaseSerializer
+from typing import Type, TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from ..serializer import BaseSerializer
 
 class FileSystemStorage(StorageBackend):
     """
@@ -13,12 +17,16 @@ class FileSystemStorage(StorageBackend):
 
     def __init__(
         self,
-        file_manager: FileManager,
-        serializer,
+        base_dir: str,
+        default_filename: str,
+        serializer: Type[BaseSerializer],
         filepath: str | None = None,
         use_timestamp: bool = False,
     ):
-        self.file_manager = file_manager
+        self.file_manager = FileManager(
+            default_dir=base_dir,
+            default_filename=default_filename,
+        )
         self.serializer = serializer
         self.filepath = filepath
         self.use_timestamp = use_timestamp
