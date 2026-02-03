@@ -12,6 +12,7 @@ from .mixins import (
     TTLManagementMixin,
     IntrospectionMixin,
     LifecycleMixin,
+    PersistenceMixin,
 )
 from ..exceptions import KeyExpired, KeyNotFound, KeyAlreadyExists
 
@@ -35,6 +36,7 @@ class InMemoryBackend(
     TTLManagementMixin,
     IntrospectionMixin,
     LifecycleMixin,
+    PersistenceMixin,
 ):
     """
     In-memory cache backend implementing all core cache operations.
@@ -274,6 +276,16 @@ class InMemoryBackend(
             entry = self._store[key]
             entry.ttl = ttl
             entry.expiration_time = utcnow() + timedelta(seconds=ttl)
+
+    # -------------------------
+    # Persistence Mixin
+    # -------------------------
+
+    def save(self):
+        pass
+
+    def load(self):
+        pass
 
     # -------------------------
     # Lifecycle Mixin
