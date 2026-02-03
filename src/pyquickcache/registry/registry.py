@@ -28,6 +28,7 @@ _CACHE_BACKEND_REGISTRY = Dict[str, Type[BaseCacheBackend]] = {}
 _EVICTION_POLICY_REGISTRY: Dict[str, Type[BaseEvictionPolicy]] = {}
 _SERIALIZER_REGISTRY: Dict[str, Type[BaseSerializer]] = {}
 
+
 def _register_cache_backend(name: str, cls: Type[BaseCacheBackend]) -> None:
     """
     Register a cache backend class under a human-readable name.
@@ -52,7 +53,6 @@ def _register_cache_backend(name: str, cls: Type[BaseCacheBackend]) -> None:
     if key in _CACHE_BACKEND_REGISTRY:
         raise ValueError(f"Cache backend '{name}' already registered.")
     _CACHE_BACKEND_REGISTRY[key] = cls
-
 
 
 def _register_eviction_policy(name: str, cls: Type[BaseEvictionPolicy]) -> None:
@@ -109,24 +109,24 @@ def _register_serializer(name: str, cls: Type[BaseSerializer]) -> None:
 
 def create_cache_backend(name: str) -> BaseCacheBackend:
     """
-        Instantiate a registered cache backend by name.
+    Instantiate a registered cache backend by name.
 
-        This function looks up the backend class registered under the
-        given name and returns a new instance. Names are matched
-        case-insensitively.
+    This function looks up the backend class registered under the
+    given name and returns a new instance. Names are matched
+    case-insensitively.
 
-        Args:
-            name (str): Name of the backend to instantiate.
+    Args:
+        name (str): Name of the backend to instantiate.
 
-        Returns:
-            BaseCacheBackend: A new instance of the requested backend.
+    Returns:
+        BaseCacheBackend: A new instance of the requested backend.
 
-        Raises:
-            ValueError: If no backend is registered under the given name.
+    Raises:
+        ValueError: If no backend is registered under the given name.
 
-        Example:
-            backend = create_cache_backend("file")
-        """
+    Example:
+        backend = create_cache_backend("file")
+    """
     try:
         return _CACHE_BACKEND_REGISTRY[
             name.lower()
@@ -136,7 +136,6 @@ def create_cache_backend(name: str) -> BaseCacheBackend:
             f"Unknown cache backend '{name}'. "
             f"Available: {list(_CACHE_BACKEND_REGISTRY.keys())}"
         )
-
 
 
 def create_eviction_policy(name: str) -> BaseEvictionPolicy:

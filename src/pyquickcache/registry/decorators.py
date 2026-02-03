@@ -38,6 +38,7 @@ def register_cache_backend(name: str):
 
     return decorator
 
+
 def register_eviction_policy(name: str):
     """
     Class decorator to register a custom eviction policy.

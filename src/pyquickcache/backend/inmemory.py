@@ -19,12 +19,14 @@ from ._cache_entry import CacheEntry
 
 from ..registry.decorators import register_cache_backend
 
+
 class KeyStatus(Enum):
     """Internal enum representing the state of a cache key."""
 
     MISSING = auto()
     EXPIRED = auto()
     VALID = auto()
+
 
 @register_cache_backend("inmemory")
 class InMemoryBackend(
