@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from ..serializer import BaseSerializer
 
 # Global registries for pluggable components
-_CACHE_BACKEND_REGISTRY = Dict[str, Type[BaseCacheBackend]] = {}
+_CACHE_BACKEND_REGISTRY: Dict[str, Type[BaseCacheBackend]] = {}
 _EVICTION_POLICY_REGISTRY: Dict[str, Type[BaseEvictionPolicy]] = {}
 _SERIALIZER_REGISTRY: Dict[str, Type[BaseSerializer]] = {}
 
