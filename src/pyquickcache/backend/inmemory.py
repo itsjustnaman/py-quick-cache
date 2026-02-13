@@ -3,6 +3,7 @@ from datetime import timedelta
 from threading import RLock
 from typing import Any, Iterable, Dict
 from enum import Enum, auto
+from dataclasses import dataclass
 import sys
 
 from ..utils.helpers import utcnow
@@ -20,6 +21,9 @@ from ._cache_entry import CacheEntry
 
 from ..registry.decorators import register_cache_backend
 
+@dataclass
+class InMemoryBackendConfig:
+    pass
 
 class KeyStatus(Enum):
     """Internal enum representing the state of a cache key."""
@@ -45,10 +49,17 @@ class InMemoryBackend(
     introspection, memory usage calculation, and optional lifecycle management.
     """
 
-    def __init__(self):
+    supports_ttl: bool = True
+    supports_eviction: bool = False
+    supports_persistence: bool = True
+    supports_bulk_operations: bool = True
+
+    def __init__(self, config: InMemoryBackendConfig | None = None):
         """Initialize the in-memory store and lock."""
         self._store: OrderedDict[str, CacheEntry] = OrderedDict()
         self._lock = RLock()
+        self.config = config or InMemoryBackendConfig()
+
 
     # -------------------------
     # Core Operations
@@ -60,7 +71,7 @@ class InMemoryBackend(
 
         Raises:
             KeyNotFound: If the key does not exist.
-            KeyExpired: If the key has expired.
+            KeyExpired: If the key has e xpired.
         """
         with self._lock:
             key_status = self._inspect_key(key=key)
@@ -72,13 +83,13 @@ class InMemoryBackend(
 
             return self._store[key]
 
-    def set(self, key: str, value: Any, ttl: int) -> None:
+    def set(self, key: str, value: Any, ttl: int | None) -> None:
         """Set or overwrite a key in the cache with a TTL."""
         with self._lock:
             entry = self._build_entry(value=value, ttl=ttl)
             self._write_entry(key=key, entry=entry)
 
-    def add(self, key: str, value: Any, ttl: int) -> None:
+    def add(self, key: str, value: Any, ttl: int | None) -> None:
         """
         Add a key only if it does not exist or is expired.
 
@@ -97,7 +108,7 @@ class InMemoryBackend(
             entry = self._build_entry(value=value, ttl=ttl)
             self._write_entry(key=key, entry=entry)
 
-    def update(self, key: str, value: Any, ttl: int) -> None:
+    def update(self, key: str, value: Any, ttl: int | None) -> None:
         """
         Update the value and TTL of an existing key.
 
@@ -156,7 +167,8 @@ class InMemoryBackend(
         """Remove all expired keys and return how many were removed."""
         removed = 0
         with self._lock:
-            for key in self._store.keys():
+            keys = list(self._store.keys())
+            for key in keys:
                 key_status = self._inspect_key(key=key)
                 if key_status is KeyStatus.EXPIRED:
                     removed = removed + 1
@@ -181,7 +193,7 @@ class InMemoryBackend(
 
         return result
 
-    def set_many(self, mapping: Dict[str, Any], ttl: int) -> None:
+    def set_many(self, mapping: Dict[str, Any], ttl: int | None) -> None:
         """Set multiple keys with the same TTL."""
         with self._lock:
             for key, value in mapping.items():
@@ -239,7 +251,7 @@ class InMemoryBackend(
     # TTL Management Mixin
     # -------------------------
 
-    def ttl(self, key) -> int:
+    def ttl(self, key: str) -> int:
         """
         Return remaining TTL in seconds.
 
@@ -255,10 +267,14 @@ class InMemoryBackend(
                 raise KeyExpired(key=key)
 
             entry = self._store[key]
+
+            if entry.expiration_time is None:
+                return -1
+
             remaining = (entry.expiration_time - utcnow()).total_seconds()
             return max(0, int(remaining))
 
-    def expire(self, key, ttl):
+    def expire(self, key: str, ttl: int | None):
         """
         Set a new TTL for an existing key.
 
@@ -275,7 +291,12 @@ class InMemoryBackend(
 
             entry = self._store[key]
             entry.ttl = ttl
-            entry.expiration_time = utcnow() + timedelta(seconds=ttl)
+
+            if ttl is None:
+                entry.expiration_time = None
+            else:
+                entry.expiration_time = utcnow() + timedelta(seconds=ttl)
+
 
     # -------------------------
     # Persistence Mixin
@@ -299,10 +320,15 @@ class InMemoryBackend(
     # Internal helper functions
     # -------------------------
 
-    def _build_entry(self, value: Any, ttl: int) -> CacheEntry:
+    def _build_entry(self, value: Any, ttl: int | None) -> CacheEntry:
         """Build a CacheEntry object from a value and TTL."""
+        if ttl is None:
+            expiration_time = None
+        else:
+            expiration_time = utcnow() + timedelta(seconds=ttl)
+
         entry = CacheEntry(
-            value=value, expiration_time=utcnow() + timedelta(seconds=ttl), ttl=ttl
+            value=value, expiration_time=expiration_time, ttl=ttl
         )
         return entry
 

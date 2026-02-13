@@ -90,4 +90,7 @@ class CacheEntry:
             bool: True if the entry is expired, False otherwise.
         """
 
-        return utcnow() > self.expiration_time
+        if self.expiration_time is None:
+            return False
+        return utcnow() >= self.expiration_time
+

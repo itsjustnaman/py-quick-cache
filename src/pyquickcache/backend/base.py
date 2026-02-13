@@ -20,6 +20,12 @@ class BaseCacheBackend(ABC):
     explicitly documented otherwise.
     """
 
+    # ---- Capability Flags ----
+    supports_ttl: bool = False
+    supports_eviction: bool = False
+    supports_persistence: bool = False
+    supports_bulk_operations: bool = False
+
     # ─────────────────────────
     # Core key-value operations
     # ─────────────────────────

@@ -10,8 +10,7 @@ This package exposes the public caching API.
 # Trigger registration of built-in backends, serializers & eviction policies
 from ._bootstrap import *
 
-from .quick_cache import QuickCache
-from .quick_cache_config import QuickCacheConfig
+from .quick_cache import QuickCache, QuickCacheConfig
 from .decorators import register_eviction_policy, register_serializer
 
 __all__ = [

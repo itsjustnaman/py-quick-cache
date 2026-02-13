@@ -1,8 +1,7 @@
 from typing import Any, Optional
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from collections import OrderedDict
 import threading
-from enum import Enum, auto
 from dataclasses import dataclass
 import atexit
 
@@ -28,119 +27,50 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
-@dataclass(slots=True)
-class CacheEntry:
+@dataclass
+class QuickCacheConfig:
     """
-    INTERNAL.
+    Configuration class for QuickCache.
 
-    Represents a single cache entry with an absolute expiration time.
+    This dataclass holds all configurable parameters for the cache, including
+    size limits, TTLs, storage options, serializer preferences, eviction policy,
+    and metrics settings.
 
-    Purpose:
-        Encapsulates the cached value along with TTL metadata and a computed
-        expiration timestamp.
+    Attributes:
+        max_size (int): Maximum number of items allowed in the cache.
+        default_ttl (int): Default time-to-live (TTL) for cache entries in seconds.
+        cleanup_interval (int): Interval in seconds to perform automatic cleanup of expired entries.
 
-    Invariants:
-        - expiration_time is always timezone-aware (UTC)
-        - ttl is the original TTL (in seconds) used to compute expiration_time
+        serializer (str): Name of the serializer to use for storing cache data. Default is 'pickle'.
+        eviction_policy (str): Eviction policy to use when cache exceeds max_size. Default is 'lru'.
 
-    Notes:
-        This class is not part of the public API and may change without notice.
-    """
+        storage_dir (str): Directory where cache files are stored. Default is 'cache_storage'.
+        filename (str): Name of the file to store cache data. Default is 'cache_data'.
+        cache_timestamps (bool): Whether to store timestamps for cache entries. Default is False.
 
-    value: Any
-    expiration_time: datetime
-    ttl: int
-
-    def to_dict(self) -> dict:
-        """
-        INTERNAL.
-
-        Serialize this cache entry into a dictionary representation.
-
-        Purpose:
-            Used by serializers and persistence layers to convert cache entries
-            into a JSON-compatible format.
-
-        Behavior:
-            - Converts expiration_time to ISO 8601 string
-            - Does not perform deep serialization of the value
-        """
-
-        return {
-            "value": self.value,
-            "expiration_time": self.expiration_time.isoformat(),  # Handle datetime conversion here
-            "ttl": self.ttl,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "CacheEntry":
-        """
-        INTERNAL.
-
-        Serialize this cache entry into a dictionary representation.
-
-        Purpose:
-            Used by serializers and persistence layers to convert cache entries
-            into a JSON-compatible format.
-
-        Behavior:
-            - Converts expiration_time to ISO 8601 string
-            - Does not perform deep serialization of the value
-        """
-
-        expiration = datetime.fromisoformat(data["expiration_time"])
-
-        # Ensure timezone awareness as fromisoformat may return naive datetime
-        if expiration.tzinfo is None:
-            expiration = expiration.replace(tzinfo=timezone.utc)
-
-        return cls(
-            value=data["value"],
-            expiration_time=expiration,  # Revert string to datetime
-            ttl=data["ttl"],
-        )
-
-    def is_expired(self) -> bool:
-        """
-        INTERNAL.
-
-        Check whether this cache entry has expired.
-
-        Behavior:
-            - Compares the current UTC time against expiration_time
-            - Does not mutate cache state
-
-        Returns:
-            bool: True if the entry is expired, False otherwise.
-        """
-
-        return utcnow() > self.expiration_time
-
-
-class KeyStatus(Enum):
-    """
-    INTERNAL.
-
-    Represents the evaluated state of a cache key during lookup.
-
-    Used by:
-        - Internal inspection helpers
-        - Public API methods to decide control flow without raising
-
-    Values:
-        MISSING:
-            Key does not exist in the cache.
-
-        EXPIRED:
-            Key exists but has exceeded its TTL and was removed.
-
-        VALID:
-            Key exists and is not expired.
+        enable_metrics (bool): Whether to enable metrics tracking. Default is True.
+        metrics_serializer (str): Serializer for metrics data. Default is 'json'.
+        metrics_storage_dir (str): Directory to store metrics files. Default is 'cache_metrics'.
+        metrics_filename (str): Filename for metrics storage. Default is 'metrics'.
+        cache_metrics_timestamps (bool): Whether to store timestamps for metrics entries. Default is False.
     """
 
-    MISSING = auto()
-    EXPIRED = auto()
-    VALID = auto()
+    max_size: int = 50
+    cleanup_interval: int = 50
+    default_ttl: int = 500
+
+    eviction_policy: str = "lru"
+
+    serializer: str = "pickle"
+    storage_dir: str = "cache_storage"
+    filename: str = "cache_data"
+    cache_timestamps: bool = False
+
+    enable_metrics: bool = True
+    metrics_serializer: bool = "json"
+    metrics_storage_dir: str = "cache_metrics"
+    metrics_filename: str = "metrics"
+    cache_metrics_timestamps: bool = False
 
 
 class QuickCache(BaseCache):
@@ -164,6 +94,8 @@ class QuickCache(BaseCache):
     def __init__(
         self,
         config: Optional[QuickCacheConfig] = None,
+        backend: str = "inmemory",
+        backend_config: Optional[Any] = None,
     ) -> None:
         """
         Initialize a new QuickCache instance.

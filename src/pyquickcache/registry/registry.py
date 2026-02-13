@@ -107,7 +107,7 @@ def _register_serializer(name: str, cls: Type[BaseSerializer]) -> None:
     _SERIALIZER_REGISTRY[key] = cls
 
 
-def create_cache_backend(name: str) -> BaseCacheBackend:
+def create_cache_backend(name: str, config=None) -> BaseCacheBackend:
     """
     Instantiate a registered cache backend by name.
 
@@ -128,14 +128,14 @@ def create_cache_backend(name: str) -> BaseCacheBackend:
         backend = create_cache_backend("file")
     """
     try:
-        return _CACHE_BACKEND_REGISTRY[
-            name.lower()
-        ]()  # end parenthesis to return a class object
-    except:
+        backend_cls = _CACHE_BACKEND_REGISTRY[name.lower()]
+    except KeyError:
         raise ValueError(
             f"Unknown cache backend '{name}'. "
             f"Available: {list(_CACHE_BACKEND_REGISTRY.keys())}"
         )
+
+    return backend_cls(config=config)
 
 
 def create_eviction_policy(name: str) -> BaseEvictionPolicy:
